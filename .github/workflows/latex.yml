@@ -1,0 +1,59 @@
+name: Build LaTeX Devcontainer
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - src/latex/**
+      - .github/workflows/latex.yml
+      - .github/workflows/common-build.yml
+  pull_request:
+    paths:
+      - src/latex/**
+      - .github/workflows/latex.yml
+      - .github/workflows/common-build.yml
+  workflow_dispatch:
+    inputs:
+      push:
+        description: Push built image to GHCR
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  prepare-tags:
+    runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.tags.outputs.tags }}
+    steps:
+      - name: Generate tags
+        id: tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          date_tag="$(date -u +'%Y-%m-%d')"
+          year_tag="$(date -u +'%Y')"
+
+          {
+            echo 'tags<<EOF'
+            echo "${date_tag}"
+            echo "${year_tag}"
+            echo "latest"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+  build-latex:
+    needs: prepare-tags
+    uses: ./.github/workflows/common-build.yml
+    with:
+      image: ${{ github.repository_owner }}/devcontainer-latex
+      containerfile: src/latex/latex.containerfile
+      context: .
+      registry: ghcr.io
+      push: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.push) }}
+      tags: ${{ needs.prepare-tags.outputs.tags }}

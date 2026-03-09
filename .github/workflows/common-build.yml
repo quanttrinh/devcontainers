@@ -1,0 +1,79 @@
+name: Build Devcontainer Image
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: Image path under registry, without tag
+        required: true
+        type: string
+      containerfile:
+        description: Path to the containerfile
+        required: true
+        type: string
+      context:
+        description: Build context path
+        required: false
+        type: string
+        default: .
+      registry:
+        description: Registry hostname
+        required: false
+        type: string
+        default: ghcr.io
+      push:
+        description: Push built image to registry
+        required: false
+        type: boolean
+        default: false
+      tags:
+        description: "Newline-delimited tag suffixes (for example: 2026-03-09, 2026, latest)"
+        required: true
+        type: string
+
+jobs:
+  build-image:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to container registry
+        if: inputs.push
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compose full image tags
+        id: compose-tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_ref="${{ inputs.registry }}/${{ inputs.image }}"
+
+          {
+            echo 'tags<<EOF'
+            while IFS= read -r tag; do
+              [[ -z "${tag}" ]] && continue
+              echo "${image_ref}:${tag}"
+            done <<< "${{ inputs.tags }}"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and optionally push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.containerfile }}
+          push: ${{ inputs.push }}
+          tags: ${{ steps.compose-tags.outputs.tags }}
